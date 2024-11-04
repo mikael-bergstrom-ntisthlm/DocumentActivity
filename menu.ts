@@ -1,9 +1,9 @@
-// TODO: GetUserIdFromEmail
-//  Google limits number of calls to Person API, so we need to limit ourselves
-//  No cache except what exists in sheet = save user ID and email in sheet
+// TODO: Get class roster (Class, Name, Surname, ResourceName) from Classroom
+
+type RowProcessor = (row: any[]) => string[];
 
 function onOpen() {
-  let ui = SpreadsheetApp.getUi(); 
+  let ui = SpreadsheetApp.getUi();
 
   ui.createMenu('DocumentActivity')
     .addItem('Get activity (weeks)', 'GetWeeks')
@@ -11,70 +11,60 @@ function onOpen() {
     .addToUi();
 }
 
-function GetResourceNames()
-{
-  let sheet = SpreadsheetApp.getActiveSheet();
-  let range = sheet.getActiveRange();
-  if (!range) return;
-
-  const values = range.getValues();
-
-  const colStart = range.getColumn();
-  const rowStart = range.getRow();
-
-  if (values[0].length != 1) { // !
-    SpreadsheetApp.getUi().alert("Expecting exactly one column, containing user queries"); // !
-    return;
-  }
-
-  for (let rNum = 0; rNum < values.length; rNum++) {
-    const row = values[rNum];
-    const userQuery: string = String(row[0]); // !
-
-    const resourceName = GetUserResourceName(userQuery); // !
-
-    let targetCell = sheet.getRange(rowStart + rNum, colStart + 1, 1, 1); // !
-
-    targetCell.setValue(resourceName); // !
-  }
+function GetResourceNames() {
+  ProcessCurrentRange(
+    1, "Containing user queries (names/email)",
+    row => {
+    const userQuery: string = String(row[0]);
+    const resourceName = GetUserResourceName(userQuery)
+    return [resourceName];
+  });
 }
 
 
 function GetWeeks() {
-  let sheet = SpreadsheetApp.getActiveSheet();
-  let range = sheet.getActiveRange();
-  if (!range) return;
+  ProcessCurrentRange(
+    2, "First with gdocs links, second with email addresses",
+    row => {
 
-  const values = range.getValues();
-
-  const colStart = range.getColumn();
-  const rowStart = range.getRow();
-
-  if (values[0].length != 2) {
-    SpreadsheetApp.getUi().alert("Expecting exactly two columns; first with gdocs links, second with email addresses");
-    return;
-  }
-
-  for (let rNum = 0; rNum < values.length; rNum++) {
-    const row = values[rNum];
     const docUrl: string = String(row[0]);
     const userResourceName: string = String(row[1]);
 
-    const dates = GetHistory(docUrl, userResourceName)
+    const dates = GetHistory(docUrl, userResourceName);
 
-    if (dates.length == 0) continue;
-    
+    if (dates.length == 0) return [];
+
     const weeks: Set<string> = new Set(
       dates.map(date => {
         return Utilities.formatDate(date, Session.getScriptTimeZone(), "w");
       })
     );
 
-    let targetCell = sheet.getRange(rowStart + rNum, colStart + 2, 1, weeks.size);
+    return Array.from(weeks).sort();
+  })
+}
 
-    targetCell.setValues([Array.from(weeks).sort()]);
+function ProcessCurrentRange(expectedColumns: number, expectedColumnDesc: string, processor: RowProcessor) {
+  let sheet = SpreadsheetApp.getActiveSheet();
+  let range = sheet.getActiveRange();
+  if (!range) return;
+
+  const values = range.getValues();
+
+  if (values[0].length != expectedColumns) {
+    SpreadsheetApp.getUi().alert("Expected exactly " + expectedColumns + " columns. " + expectedColumnDesc);
+    return;
   }
 
-  // SpreadsheetApp.getUi().alert(r.offset(0,r.getWidth()).getValue());
-  // SpreadsheetApp.getUi().alert(r?.getA1Notation());
+  const colStart = range.getColumn();
+  const rowStart = range.getRow();
+
+  for (let rNum = 0; rNum < values.length; rNum++) {
+    const row = values[rNum];
+    const result: string[] = processor(row);
+
+    let targetCells = sheet.getRange(rowStart + rNum, colStart + row.length, 1, result.length);
+    
+    targetCells.setValues([result])
+  }
 }
